@@ -1,0 +1,170 @@
+---
+title: "BAR CHART COVID-19 + SHINY APP (link) : Coursera Week 4"
+author: "Aymen Ben Brik"
+date: "01/05/2020"
+output:
+  slidy_presentation: default
+  beamer_presentation: default
+header-includes:
+- \usepackage{bbm}
+- \usepackage{threeparttable}
+- \usepackage{booktabs}
+- \usepackage{expex}
+- \usepackage{array}
+- \usepackage{numprint}["autolanguage"]
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# I Importation des library 
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, , echo=TRUE, paged.print=FALSE}
+library(ggplot2)
+library(gganimate)
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(plotly)
+
+```
+
+## Les objectifs
+Dans cette partie, je vais utiliser les données sur le Covid-19. 
+
+Le fichier est disponible sur cette adresse : 
+
+"https://data.humdata.org/dataset/novel-coronavirus-2019-ncov-cases"
+
+1- On va essayer de faire un BAR CHART des pays les plus contaminés par le virus. 
+2- On va réaliser une application RSHINY qui donne une idée sur la dispersion du COVID-19 sur les continents 
+## 1 BAR CHART 
+
+Il faut être patient le code prends un peu de temps à compiler.
+
+```{r echo=TRUE, eval=FALSE}
+covid = read.csv("time_series_covid19_confirmed_global.csv")
+View(covid)
+covidnew = covid %>% arrange(Country.Region)
+
+newdim = length(levels(covid$Country.Region))
+for (i in (1 : (nrow(covidnew)-1))) {
+  if (covidnew$Country.Region[i+1] == covidnew$Country.Region[i]) {
+      covidnew[i+1, 5:ncol(covidnew)] = covidnew[i+1, 5:ncol(covidnew)] + covidnew[i, 5:ncol(covidnew)]  
+  } 
+}
+
+
+#Nouvelle base de données avec des valeurs uniques
+covidUnique = data.frame()
+j=0
+
+for(i in (1 : (nrow(covidnew)-1))){
+  if (covidnew$Country.Region[i+1] != covidnew$Country.Region[i]) {
+    j=j+1
+    covidUnique[j, 1:ncol(covid)] = covidnew[i, 1:ncol(covid)]   
+  }
+  }
+covidUnique[newdim,] = covidnew[nrow(covid),]
+
+covidUnique2=covidUnique[,5:ncol(covidUnique)]
+dim(covidUnique2)
+nombre_de_cas = as.vector(t(covidUnique2))
+pays = rep(covidUnique$Country.Region, each =ncol(covidUnique2))
+length(pays)
+
+library(chron)
+date1 = as.Date("2020-01-22")
+date2 = as.Date("2020-04-30")
+
+dates = rep(seq(date1, date2, 1), nrow(covidUnique2))
+summary(dates)
+
+dataset =data.frame(pays,dates, nombre_de_cas )
+
+
+
+
+dataset_formatted <- dataset %>%
+  group_by(dates) %>%
+  # The * 1 makes it possible to have non-integer ranks while sliding
+  mutate(rank = rank(-nombre_de_cas, "first"),
+         Value_rel = nombre_de_cas/nombre_de_cas[rank==1],
+         Value_lbl = paste0(" ",nombre_de_cas),
+         )%>%
+  group_by(pays) %>% 
+  filter(rank <=10) %>%
+  ungroup()
+
+
+
+
+dataset_formatted
+dataset2 = dataset_formatted[complete.cases(dataset_formatted), ]
+
+anim <- ggplot(dataset_formatted, aes(rank, group = pays, 
+                                  fill = as.factor(pays), color = as.factor(pays))) +
+  geom_tile(aes(y = nombre_de_cas/2,
+                height = nombre_de_cas,
+                width = 0.9), alpha = 0.8, color = NA) +
+  geom_text(aes(y = 0, label = paste(pays, " ")), vjust = 0.5, hjust = 1, size= 8)+
+  geom_text(aes(y=nombre_de_cas,label = Value_lbl, hjust=0),size= 8) +
+  coord_flip(clip = "off", expand = FALSE) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_reverse() +
+  guides(color = FALSE, fill = FALSE) +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        legend.position="none",
+        panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.grid.major.x = element_line( size=.1, color="grey" ),
+        panel.grid.minor.x = element_line( size=.1, color="grey" ),
+        plot.title=element_text(size=25, hjust=0.5, face="bold", colour="grey", vjust=-1),
+        plot.subtitle=element_text(size=18, hjust=0.5, face="italic", color="grey"),
+        plot.caption =element_text(size=12, hjust=0.5, face="italic", color="grey"),
+        plot.background=element_blank(),
+        plot.margin = margin(2,2, 2, 4, "cm")) + 
+  transition_states(dates, transition_length = 1, state_length =1, wrap = FALSE) +
+  view_follow(fixed_x = TRUE)  +
+  labs(title = 'Covid par jour : ',  
+       subtitle  =  "Top 10 Countries",
+       caption  = "Data source : https://data.humdata.org/dataset/novel-coronavirus-2019-ncov-cases 
+       ") 
+
+anim
+animate(anim, 400, fps = 20,  width = 1200, height = 1000, 
+        renderer = gifski_renderer("Covid.gif"), end_pause = 30, start_pause =  30, duration = 60) 
+
+# For MP4
+
+animate(anim, 200, fps = 20,  width = 1200, height = 1000) -> for_mp4
+
+anim_save("animation.mp4", animation = for_mp4 )
+
+
+```
+## Le résultat : 
+![Voici le résultat](covid.gif)
+
+## 2 SHINY APP 
+
+Je vous laisse le lien pour voir mon travail. 
+J'ai essayé de vous donner la distribution du virus sur chaque continent. 
+
+Voici le lien : 
+https://aymen-ben-brik.shinyapps.io/COVID19_by_Aymen_Ben_Brik/
+
+
+
+
+
